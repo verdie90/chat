@@ -174,7 +174,11 @@ export default function Home() {
                   disabled={!roomId.trim()}
                   className='px-3 py-3 bg-slate-700/80 hover:bg-slate-600/80 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-600/70 rounded-xl text-slate-300 hover:text-white transition'
                   title={copied ? 'Copied!' : 'Copy room ID'}>
-                  {copied ? <Check className='w-5 h-5 text-emerald-400' /> : <Copy className='w-5 h-5' />}
+                  {copied ? (
+                    <Check className='w-5 h-5 text-emerald-400' />
+                  ) : (
+                    <Copy className='w-5 h-5' />
+                  )}
                 </button>
                 <button
                   type='button'
