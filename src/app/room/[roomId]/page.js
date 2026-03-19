@@ -1353,7 +1353,7 @@ function RoomContent() {
 
   return (
     <div
-      className='h-screen bg-slate-950 flex flex-col overflow-hidden select-none'
+      className='h-dvh bg-slate-950 flex flex-col overflow-hidden select-none'
       onClick={() => setShowAttachMenu(false)}>
       {/* Hidden file input */}
       <input
@@ -1552,30 +1552,43 @@ function RoomContent() {
           </span>
         </div>
 
-        <div className='flex items-center gap-2 text-xs'>
-          <div className='flex items-center gap-1.5 bg-slate-800 rounded-lg px-2.5 py-1.5 border border-slate-700/50'>
-            <span className='text-slate-400'>Room</span>
-            <span className='text-white font-mono font-bold tracking-wider'>
+        <div className='flex items-center gap-1.5 text-xs min-w-0'>
+          {/* Room chip — truncated on mobile */}
+          <div className='flex items-center gap-1 bg-slate-800 rounded-lg px-2 sm:px-2.5 py-1.5 border border-slate-700/50 min-w-0 max-w-28 sm:max-w-none'>
+            <span className='text-slate-400 shrink-0 hidden sm:inline'>
+              Room
+            </span>
+            <span className='text-white font-mono font-bold tracking-wider truncate'>
               {roomId}
             </span>
           </div>
           <button
             onClick={handleCopyRoom}
             title={roomCopied ? 'Copied!' : 'Copy room ID'}
-            className='w-7 h-7 flex items-center justify-center bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-slate-400 hover:text-white transition'>
+            className='w-7 h-7 flex items-center justify-center bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-slate-400 hover:text-white transition shrink-0'>
             {roomCopied ? (
               <Check className='w-4 h-4 text-emerald-400' />
             ) : (
               <Copy className='w-4 h-4' />
             )}
           </button>
-          <div className='flex items-center gap-1.5 bg-slate-800 rounded-lg px-2.5 py-1.5 border border-slate-700/50'>
+          {/* Username — visible on sm+, avatar-only on mobile */}
+          <div className='hidden sm:flex items-center gap-1.5 bg-slate-800 rounded-lg px-2.5 py-1.5 border border-slate-700/50'>
             <div className='w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-[10px] shrink-0'>
               {username[0]?.toUpperCase()}
             </div>
             <span className='text-white max-w-25 truncate'>{username}</span>
             {myIdle && (
               <span className='text-amber-400 text-[10px] ml-1'>· idle</span>
+            )}
+          </div>
+          {/* Mobile: avatar only */}
+          <div className='sm:hidden flex items-center gap-1 bg-slate-800 rounded-lg px-2 py-1.5 border border-slate-700/50 shrink-0'>
+            <div className='w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-[10px]'>
+              {username[0]?.toUpperCase()}
+            </div>
+            {myIdle && (
+              <span className='text-amber-400 text-[10px]'>· idle</span>
             )}
           </div>
           <div className='hidden sm:block'>
@@ -1587,17 +1600,18 @@ function RoomContent() {
       {/* ── Body ─────────────────────────────────────────────────────────────── */}
       <div className='flex flex-1 overflow-hidden flex-col'>
         {/* Sub-header */}
-        <div className='px-4 py-3 border-b border-slate-800 shrink-0 flex items-center justify-between bg-slate-900/60'>
+        <div className='px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-800 shrink-0 flex items-center justify-between bg-slate-900/60'>
           <div>
-            <div className='flex items-center gap-2'>
-              <p className='text-sm font-semibold text-white'>Chat</p>
+            <div className='flex items-center gap-2 min-w-0 flex-1 mr-2'>
+              <p className='text-sm font-semibold text-white shrink-0'>Chat</p>
               {isEncrypted && (
-                <span className='inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5'>
-                  <Lock className='w-3 h-3' /> E2E Encrypted
+                <span className='inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5 shrink-0'>
+                  <Lock className='w-3 h-3' />{' '}
+                  <span className='hidden sm:inline'>E2E</span> Encrypted
                 </span>
               )}
             </div>
-            <p className='text-xs text-slate-500 mt-0.5'>
+            <p className='text-xs text-slate-500 mt-0.5 truncate'>
               {remoteUser ? (
                 <span>
                   with <strong className='text-slate-300'>{remoteUser}</strong>
@@ -1722,7 +1736,7 @@ function RoomContent() {
         </div>
 
         {/* Input bar */}
-        <div className='p-3 border-t border-slate-800 shrink-0 bg-slate-900/40'>
+        <div className='px-2 sm:px-3 py-2 sm:py-3 border-t border-slate-800 shrink-0 bg-slate-900/40'>
           <div className='flex gap-2 items-center'>
             {/* Attach button + dropdown menu */}
             <div
@@ -1778,7 +1792,7 @@ function RoomContent() {
               }
               disabled={status !== 'connected' || !isEncrypted}
               maxLength={2000}
-              className='flex-1 bg-slate-800/80 border border-slate-700/60 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/80 focus:border-transparent disabled:opacity-40 transition'
+              className='flex-1 bg-slate-800/80 border border-slate-700/60 rounded-xl px-3 sm:px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/80 focus:border-transparent disabled:opacity-40 transition'
             />
 
             {/* Send button */}

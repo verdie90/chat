@@ -16,6 +16,11 @@ export const metadata = {
   description: 'Anonymous peer-to-peer video and text chat powered by WebRTC',
 }
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+}
+
 export default function RootLayout({ children }) {
   return (
     <html

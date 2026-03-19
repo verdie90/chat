@@ -111,11 +111,11 @@ export default function Home() {
     <div className='min-h-screen bg-linear-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4'>
       <div className='w-full max-w-md'>
         {/* Logo */}
-        <div className='text-center mb-8'>
-          <div className='inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 mb-4 shadow-lg shadow-indigo-500/30'>
-            <MessageSquare className='w-8 h-8 text-white' />
+        <div className='text-center mb-5 sm:mb-8'>
+          <div className='inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-indigo-600 mb-4 shadow-lg shadow-indigo-500/30'>
+            <MessageSquare className='w-7 h-7 sm:w-8 sm:h-8 text-white' />
           </div>
-          <h1 className='text-3xl font-bold text-white tracking-tight mb-1'>
+          <h1 className='text-2xl sm:text-3xl font-bold text-white tracking-tight mb-1'>
             AnonChat
           </h1>
           <p className='text-slate-400 text-sm'>
@@ -124,7 +124,7 @@ export default function Home() {
         </div>
 
         {/* Card */}
-        <div className='bg-slate-800/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-8 shadow-2xl'>
+        <div className='bg-slate-800/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-5 sm:p-8 shadow-2xl'>
           <form
             onSubmit={handleJoin}
             className='space-y-5'>
