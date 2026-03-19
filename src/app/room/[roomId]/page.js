@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense } from 'react'
+import React, { Suspense } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import { io } from 'socket.io-client'
@@ -13,6 +13,10 @@ import {
   MapPin,
   Lock,
   Check,
+  Download,
+  X,
+  FileText,
+  Play,
 } from 'lucide-react'
 
 const ICE_CONFIG = {
@@ -130,86 +134,217 @@ function waitForDrain(dc) {
 
 // ─── Attachment viewer ────────────────────────────────────────────────────────
 
+function fmtSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+function PreviewModal({ att, onClose }) {
+  const { mimeType, name, url, size } = att
+  return (
+    <div
+      className='fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm'
+      onClick={onClose}>
+      {/* Toolbar */}
+      <div
+        className='flex items-center justify-between px-4 py-3 bg-slate-900/80 shrink-0'
+        onClick={(e) => e.stopPropagation()}>
+        <div className='min-w-0'>
+          <p className='text-sm font-medium text-white truncate'>{name}</p>
+          <p className='text-xs text-slate-400'>{fmtSize(size)}</p>
+        </div>
+        <div className='flex items-center gap-2 ml-4 shrink-0'>
+          <a
+            href={url}
+            download={name}
+            onClick={(e) => e.stopPropagation()}
+            className='flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white text-xs font-medium transition'>
+            <Download className='w-3.5 h-3.5' />
+            Download
+          </a>
+          <button
+            onClick={onClose}
+            className='w-8 h-8 flex items-center justify-center rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition'>
+            <X className='w-4 h-4' />
+          </button>
+        </div>
+      </div>
+
+      {/* Preview area */}
+      <div
+        className='flex-1 flex items-center justify-center overflow-auto p-4'
+        onClick={onClose}>
+        {mimeType.startsWith('image/') && (
+          <img
+            src={url}
+            alt={name}
+            className='max-w-full max-h-full object-contain rounded-xl select-none'
+            onClick={(e) => e.stopPropagation()}
+          />
+        )}
+        {mimeType.startsWith('video/') && (
+          <video
+            src={url}
+            controls
+            autoPlay
+            className='max-w-full max-h-full rounded-xl'
+            onClick={(e) => e.stopPropagation()}
+          />
+        )}
+        {mimeType.startsWith('audio/') && (
+          <div
+            className='bg-slate-800 rounded-2xl p-8 flex flex-col items-center gap-4 w-full max-w-sm'
+            onClick={(e) => e.stopPropagation()}>
+            <div className='w-16 h-16 rounded-full bg-indigo-600/30 flex items-center justify-center'>
+              <Play className='w-8 h-8 text-indigo-400' />
+            </div>
+            <p className='text-white text-sm font-medium text-center truncate w-full'>
+              {name}
+            </p>
+            <audio
+              src={url}
+              controls
+              autoPlay
+              className='w-full'
+            />
+          </div>
+        )}
+        {!mimeType.startsWith('image/') &&
+          !mimeType.startsWith('video/') &&
+          !mimeType.startsWith('audio/') && (
+            <div
+              className='bg-slate-800 rounded-2xl p-8 flex flex-col items-center gap-4 max-w-sm w-full'
+              onClick={(e) => e.stopPropagation()}>
+              <div className='w-16 h-16 rounded-full bg-slate-700 flex items-center justify-center'>
+                <FileText className='w-8 h-8 text-indigo-400' />
+              </div>
+              <div className='text-center'>
+                <p className='text-white font-medium truncate max-w-60'>
+                  {name}
+                </p>
+                <p className='text-slate-400 text-sm mt-1'>{fmtSize(size)}</p>
+              </div>
+              <a
+                href={url}
+                download={name}
+                className='flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white text-sm font-medium transition'>
+                <Download className='w-4 h-4' />
+                Download file
+              </a>
+            </div>
+          )}
+      </div>
+    </div>
+  )
+}
+
 function AttachmentBubble({ att }) {
   const { mimeType, name, url, size } = att
-  if (mimeType.startsWith('image/')) {
-    return (
-      <a
-        href={url}
-        target='_blank'
-        rel='noreferrer'>
-        <img
-          src={url}
-          alt={name}
-          className='max-w-65 max-h-50 rounded-xl object-cover cursor-pointer hover:opacity-90 transition'
-        />
-      </a>
-    )
-  }
-  if (mimeType.startsWith('video/')) {
-    return (
-      <video
-        src={url}
-        controls
-        className='max-w-70 rounded-xl'
-      />
-    )
-  }
-  if (mimeType.startsWith('audio/')) {
-    return (
-      <audio
-        src={url}
-        controls
-        className='w-full min-w-55'
-      />
-    )
-  }
+  const [open, setOpen] = React.useState(false)
+  const isImage = mimeType.startsWith('image/')
+  const isVideo = mimeType.startsWith('video/')
+  const isAudio = mimeType.startsWith('audio/')
+
   return (
-    <a
-      href={url}
-      download={name}
-      className='flex items-center gap-2.5 bg-slate-700/60 hover:bg-slate-700 rounded-xl px-3 py-2.5 transition text-sm text-slate-200'>
-      <svg
-        className='w-8 h-8 shrink-0 text-indigo-400'
-        fill='none'
-        stroke='currentColor'
-        viewBox='0 0 24 24'>
-        <path
-          strokeLinecap='round'
-          strokeLinejoin='round'
-          strokeWidth={1.5}
-          d='M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'
+    <>
+      {/* Inline thumbnail / player */}
+      {isImage && (
+        <button
+          onClick={() => setOpen(true)}
+          className='block'>
+          <img
+            src={url}
+            alt={name}
+            className='max-w-65 max-h-50 rounded-xl object-cover hover:opacity-90 transition cursor-zoom-in'
+          />
+        </button>
+      )}
+      {isVideo && (
+        <div className='relative max-w-70 group'>
+          <video
+            src={url}
+            className='w-full rounded-xl cursor-pointer'
+            onClick={() => setOpen(true)}
+          />
+          <button
+            onClick={() => setOpen(true)}
+            className='absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 rounded-xl transition'>
+            <div className='w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center'>
+              <Play className='w-6 h-6 text-white' />
+            </div>
+          </button>
+        </div>
+      )}
+      {isAudio && (
+        <div className='flex flex-col gap-1.5 min-w-55'>
+          <audio
+            src={url}
+            controls
+            className='w-full'
+          />
+          <button
+            onClick={() => setOpen(true)}
+            className='flex items-center justify-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition'>
+            <Download className='w-3 h-3' /> Download
+          </button>
+        </div>
+      )}
+      {!isImage && !isVideo && !isAudio && (
+        <button
+          onClick={() => setOpen(true)}
+          className='flex items-center gap-2.5 bg-slate-700/60 hover:bg-slate-700 rounded-xl px-3 py-2.5 transition text-sm text-slate-200 w-full text-left'>
+          <FileText className='w-8 h-8 shrink-0 text-indigo-400' />
+          <div className='min-w-0'>
+            <p className='truncate font-medium'>{name}</p>
+            <p className='text-xs text-slate-400'>{fmtSize(size)}</p>
+          </div>
+          <Download className='w-4 h-4 shrink-0 text-slate-500 ml-auto' />
+        </button>
+      )}
+
+      {/* Full-screen preview modal */}
+      {open && (
+        <PreviewModal
+          att={att}
+          onClose={() => setOpen(false)}
         />
-      </svg>
-      <div className='min-w-0'>
-        <p className='truncate font-medium'>{name}</p>
-        <p className='text-xs text-slate-400'>
-          {size ? (size / 1024).toFixed(1) + ' KB' : ''}
-        </p>
-      </div>
-    </a>
+      )}
+    </>
   )
 }
 
 function LocationBubble({ lat, lng }) {
-  const mapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=14&size=280x160&markers=${lat},${lng}`
-  const osmUrl = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=15`
+  // Google Maps static image (no API key required for basic embed URLs)
+  const staticUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=15&size=280x160&scale=2&markers=color:red%7C${lat},${lng}&map_type=roadmap`
+  const mapsUrl = `https://www.google.com/maps?q=${lat},${lng}&ll=${lat},${lng}&z=15`
   return (
     <a
-      href={osmUrl}
+      href={mapsUrl}
       target='_blank'
       rel='noreferrer'
       className='block max-w-70'>
       <div className='rounded-xl overflow-hidden border border-slate-700/60'>
-        <img
-          src={mapUrl}
-          alt='location'
-          className='w-full block'
+        {/* Embed Google Maps iframe — no API key needed for basic iframe */}
+        <iframe
+          title='location'
+          width='280'
+          height='160'
+          loading='lazy'
+          referrerPolicy='no-referrer-when-downgrade'
+          src={`https://maps.google.com/maps?q=${lat},${lng}&z=15&output=embed`}
+          className='w-full block pointer-events-none'
         />
-        <div className='bg-slate-800/80 px-3 py-1.5 flex items-center gap-1.5 text-xs text-slate-300'>
-          <MapPin className='w-4 h-4' />
-          <span>
-            {lat.toFixed(5)}, {lng.toFixed(5)}
+        <div className='bg-slate-800/80 px-3 py-1.5 flex items-center justify-between text-xs text-slate-300'>
+          <div className='flex items-center gap-1.5'>
+            <MapPin className='w-4 h-4 text-red-400' />
+            <span>
+              {lat.toFixed(5)}, {lng.toFixed(5)}
+            </span>
+          </div>
+          <span className='text-slate-500 hover:text-slate-300 transition'>
+            Open ↗
           </span>
         </div>
       </div>
