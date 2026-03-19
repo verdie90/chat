@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# AnonChat
+
+Anonymous peer-to-peer chat powered by WebRTC, with end-to-end encryption, file sharing, and PWA support.
+
+## Features
+
+- **Anonymous** — random usernames generated on each visit, no accounts or sign-up
+- **End-to-end encrypted** — ECDH P-256 key exchange + AES-256-GCM per message
+- **Fruit-code rooms** — short, memorable room IDs (e.g. `Mango-Kiwi-Lime`)
+- **File & image sharing** — chunked transfer over WebRTC DataChannel, with inline preview
+- **Location sharing** — share a Google Maps pin directly in chat
+- **Idle detection** — automatically marks you as idle after inactivity
+- **PWA** — installable on desktop and mobile, works offline for static assets
+- **Mobile-friendly** — `h-dvh` layout, virtual-keyboard aware, iOS tap/zoom fixes
+
+## Tech Stack
+
+| Layer | Library |
+|---|---|
+| Framework | Next.js 16.2 (App Router) |
+| UI | React 19, Tailwind CSS v4, Lucide icons |
+| Realtime | Socket.io 4.8 (signaling server) |
+| P2P | WebRTC DataChannel |
+| Encryption | Web Crypto API (ECDH + AES-GCM) |
+| PWA | Service Worker + Web App Manifest |
 
 ## Getting Started
 
-First, run the development server:
+### Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The custom server (`server.mjs`) starts Next.js **and** the Socket.io signaling server together on port `3000`.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+Open [http://localhost:3000](http://localhost:3000).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Production
 
-## Learn More
+```bash
+npm run build
+npm start
+```
 
-To learn more about Next.js, take a look at the following resources:
+Set `PORT` env var to change the port (default `3000`).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## How It Works
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. User lands on the home page, gets a random username and can generate or paste a room ID.
+2. Two users join the same room — the signaling server relays WebRTC `offer`/`answer`/`candidate` messages.
+3. Once connected, all chat messages and files go **directly** over the encrypted WebRTC DataChannel — the server sees nothing after the handshake.
+4. Encryption keys are negotiated via ECDH on the client; every message is encrypted with AES-256-GCM before being sent through the DataChannel.
 
-## Deploy on Vercel
+## Project Structure
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+  app/
+    page.js              # Landing page (username + room picker)
+    layout.js            # Root layout, PWA metadata
+    globals.css          # Global styles, mobile fixes
+    manifest.js          # Web app manifest
+    icon.js              # Favicon (Next.js ImageResponse)
+    apple-icon.js        # iOS home screen icon
+    pwa-register.js      # Service worker registration
+    room/[roomId]/
+      page.js            # Chat room (WebRTC, E2E crypto, file transfer)
+public/
+  sw.js                  # Service worker (cache-first static, network-first pages)
+  icons/icon.svg         # App icon
+server.mjs               # Socket.io + Next.js combined server
+```

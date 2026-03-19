@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
+import PwaRegister from './pwa-register'
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -13,12 +14,19 @@ const geistMono = Geist_Mono({
 
 export const metadata = {
   title: 'AnonChat — Anonymous Realtime Chat',
-  description: 'Anonymous peer-to-peer video and text chat powered by WebRTC',
+  description: 'Anonymous peer-to-peer chat powered by WebRTC',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'AnonChat',
+  },
 }
 
 export const viewport = {
   width: 'device-width',
   initialScale: 1,
+  themeColor: '#4f46e5',
 }
 
 export default function RootLayout({ children }) {
@@ -26,7 +34,12 @@ export default function RootLayout({ children }) {
     <html
       lang='en'
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className='min-h-full flex flex-col'>{children}</body>
+      <body
+        className='min-h-full flex flex-col'
+        suppressHydrationWarning>
+        <PwaRegister />
+        {children}
+      </body>
     </html>
   )
 }
