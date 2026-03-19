@@ -4,6 +4,16 @@ import { Suspense } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import { io } from 'socket.io-client'
+import {
+  MessageSquare,
+  Send,
+  LogOut,
+  Copy,
+  Paperclip,
+  MapPin,
+  Lock,
+  Check,
+} from 'lucide-react'
 
 const ICE_CONFIG = {
   iceServers: [
@@ -15,6 +25,12 @@ const ICE_CONFIG = {
 
 // ─── E2E Encryption helpers (ECDH + AES-GCM) ─────────────────────────────────
 
+function uint8ToBase64(bytes) {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+  return btoa(binary)
+}
+
 async function generateKeyPair() {
   return crypto.subtle.generateKey(
     { name: 'ECDH', namedCurve: 'P-256' },
@@ -25,7 +41,7 @@ async function generateKeyPair() {
 
 async function exportPublicKey(key) {
   const raw = await crypto.subtle.exportKey('raw', key)
-  return btoa(String.fromCharCode(...new Uint8Array(raw)))
+  return uint8ToBase64(new Uint8Array(raw))
 }
 
 async function importPublicKey(b64) {
@@ -60,7 +76,7 @@ async function encryptText(sharedKey, plaintext) {
   const combined = new Uint8Array(iv.byteLength + ciphertext.byteLength)
   combined.set(iv, 0)
   combined.set(new Uint8Array(ciphertext), iv.byteLength)
-  return btoa(String.fromCharCode(...combined))
+  return uint8ToBase64(combined)
 }
 
 async function decryptText(sharedKey, b64) {
@@ -83,8 +99,8 @@ async function encryptBinary(sharedKey, arrayBuffer) {
     arrayBuffer
   )
   return {
-    iv: btoa(String.fromCharCode(...iv)),
-    ct: btoa(String.fromCharCode(...new Uint8Array(ciphertext))),
+    iv: uint8ToBase64(iv),
+    ct: uint8ToBase64(new Uint8Array(ciphertext)),
   }
 }
 
@@ -94,150 +110,22 @@ async function decryptBinary(sharedKey, { iv: ivB64, ct: ctB64 }) {
   return crypto.subtle.decrypt({ name: 'AES-GCM', iv }, sharedKey, ct)
 }
 
-// ─── Icons ────────────────────────────────────────────────────────────
+// ─── Chunked transfer helpers ─────────────────────────────────────────────────
 
-function MicIcon({ muted }) {
-  return muted ? (
-    <svg
-      className='w-5 h-5'
-      fill='none'
-      stroke='currentColor'
-      viewBox='0 0 24 24'>
-      <path
-        strokeLinecap='round'
-        strokeLinejoin='round'
-        strokeWidth={2}
-        d='M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z'
-      />
-      <path
-        strokeLinecap='round'
-        strokeLinejoin='round'
-        strokeWidth={2}
-        d='M3 3l18 18'
-      />
-    </svg>
-  ) : (
-    <svg
-      className='w-5 h-5'
-      fill='none'
-      stroke='currentColor'
-      viewBox='0 0 24 24'>
-      <path
-        strokeLinecap='round'
-        strokeLinejoin='round'
-        strokeWidth={2}
-        d='M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z'
-      />
-    </svg>
-  )
-}
+const CHUNK_SIZE = 16384 // base64 chars per DataChannel message (~12 KB binary)
 
-function SendIcon() {
-  return (
-    <svg
-      className='w-4 h-4'
-      fill='none'
-      stroke='currentColor'
-      viewBox='0 0 24 24'>
-      <path
-        strokeLinecap='round'
-        strokeLinejoin='round'
-        strokeWidth={2}
-        d='M12 19l9 2-9-18-9 18 9-2zm0 0v-8'
-      />
-    </svg>
-  )
-}
-
-function ChatIcon() {
-  return (
-    <svg
-      className='w-5 h-5'
-      fill='none'
-      stroke='currentColor'
-      viewBox='0 0 24 24'>
-      <path
-        strokeLinecap='round'
-        strokeLinejoin='round'
-        strokeWidth={2}
-        d='M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z'
-      />
-    </svg>
-  )
-}
-
-function LeaveIcon() {
-  return (
-    <svg
-      className='w-5 h-5'
-      fill='none'
-      stroke='currentColor'
-      viewBox='0 0 24 24'>
-      <path
-        strokeLinecap='round'
-        strokeLinejoin='round'
-        strokeWidth={2}
-        d='M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1'
-      />
-    </svg>
-  )
-}
-
-function AttachIcon() {
-  return (
-    <svg
-      className='w-5 h-5'
-      fill='none'
-      stroke='currentColor'
-      viewBox='0 0 24 24'>
-      <path
-        strokeLinecap='round'
-        strokeLinejoin='round'
-        strokeWidth={2}
-        d='M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13'
-      />
-    </svg>
-  )
-}
-
-function LocationIcon() {
-  return (
-    <svg
-      className='w-4 h-4'
-      fill='none'
-      stroke='currentColor'
-      viewBox='0 0 24 24'>
-      <path
-        strokeLinecap='round'
-        strokeLinejoin='round'
-        strokeWidth={2}
-        d='M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z'
-      />
-      <path
-        strokeLinecap='round'
-        strokeLinejoin='round'
-        strokeWidth={2}
-        d='M15 11a3 3 0 11-6 0 3 3 0 016 0z'
-      />
-    </svg>
-  )
-}
-
-function LockIcon() {
-  return (
-    <svg
-      className='w-3 h-3'
-      fill='none'
-      stroke='currentColor'
-      viewBox='0 0 24 24'>
-      <path
-        strokeLinecap='round'
-        strokeLinejoin='round'
-        strokeWidth={2}
-        d='M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z'
-      />
-    </svg>
-  )
+function waitForDrain(dc) {
+  return new Promise((resolve) => {
+    if (dc.bufferedAmount <= dc.bufferedAmountLowThreshold) {
+      resolve()
+      return
+    }
+    const h = () => {
+      dc.removeEventListener('bufferedamountlow', h)
+      resolve()
+    }
+    dc.addEventListener('bufferedamountlow', h)
+  })
 }
 
 // ─── Attachment viewer ────────────────────────────────────────────────────────
@@ -319,7 +207,7 @@ function LocationBubble({ lat, lng }) {
           className='w-full block'
         />
         <div className='bg-slate-800/80 px-3 py-1.5 flex items-center gap-1.5 text-xs text-slate-300'>
-          <LocationIcon />
+          <MapPin className='w-4 h-4' />
           <span>
             {lat.toFixed(5)}, {lng.toFixed(5)}
           </span>
@@ -396,12 +284,11 @@ function RoomContent() {
   const socketRef = useRef(null)
   const pcRef = useRef(null)
   const dcRef = useRef(null)
-  const localStreamRef = useRef(null)
-  const remoteAudioRef = useRef(null)
   const msgEndRef = useRef(null)
   const pendingIceRef = useRef([])
   const remoteIdRef = useRef(null)
   const fileInputRef = useRef(null)
+  const incomingTransfersRef = useRef({}) // id → { meta, chunks[], received }
 
   // Encryption refs
   const keyPairRef = useRef(null) // own ECDH key pair
@@ -421,13 +308,13 @@ function RoomContent() {
   const [msgInput, setMsgInput] = useState('')
   const [status, setStatus] = useState('connecting')
   const [remoteUser, setRemoteUser] = useState(null)
-  const [isMuted, setIsMuted] = useState(false)
   const [isEncrypted, setIsEncrypted] = useState(false)
   const [peerTyping, setPeerTyping] = useState(false)
   const [peerIdle, setPeerIdle] = useState(false)
   const [myIdle, setMyIdle] = useState(false)
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [attachType, setAttachType] = useState(null)
+  const [roomCopied, setRoomCopied] = useState(false)
 
   // Auto-scroll chat
   useEffect(() => {
@@ -515,6 +402,50 @@ function RoomContent() {
     if (!sharedKeyRef.current) return
 
     try {
+      // Chunked file transfer protocol
+      if (msg.__transfer) {
+        const { id } = msg
+        if (msg.__transfer === 'header') {
+          incomingTransfersRef.current[id] = {
+            username: msg.username,
+            ts: msg.ts,
+            mimeType: msg.mimeType,
+            name: msg.name,
+            size: msg.size,
+            totalChunks: msg.totalChunks,
+            iv: msg.iv,
+            chunks: [],
+          }
+        } else if (msg.__transfer === 'chunk') {
+          const t = incomingTransfersRef.current[id]
+          if (t) t.chunks[msg.index] = msg.data
+        } else if (msg.__transfer === 'done') {
+          const t = incomingTransfersRef.current[id]
+          if (t) {
+            delete incomingTransfersRef.current[id]
+            const ct = t.chunks.join('')
+            const decrypted = await decryptBinary(sharedKeyRef.current, {
+              iv: t.iv,
+              ct,
+            })
+            const blob = new Blob([decrypted], { type: t.mimeType })
+            const url = URL.createObjectURL(blob)
+            pushMsg({
+              type: 'remote',
+              username: t.username,
+              ts: t.ts,
+              attachment: {
+                mimeType: t.mimeType,
+                name: t.name,
+                url,
+                size: t.size,
+              },
+            })
+          }
+        }
+        return
+      }
+
       if (msg.encText !== undefined) {
         const text = await decryptText(sharedKeyRef.current, msg.encText)
         pushMsg({ type: 'remote', username: msg.username, text, ts: msg.ts })
@@ -565,22 +496,10 @@ function RoomContent() {
     const pc = new RTCPeerConnection(ICE_CONFIG)
     pcRef.current = pc
 
-    // Add local tracks
-    localStreamRef.current
-      ?.getTracks()
-      .forEach((t) => pc.addTrack(t, localStreamRef.current))
-
     // Send ICE candidates
     pc.onicecandidate = ({ candidate }) => {
       if (candidate && remoteIdRef.current) {
         socket.emit('ice-candidate', { to: remoteIdRef.current, candidate })
-      }
-    }
-
-    // Remote stream → audio element
-    pc.ontrack = ({ streams }) => {
-      if (remoteAudioRef.current && streams[0]) {
-        remoteAudioRef.current.srcObject = streams[0]
       }
     }
 
@@ -591,7 +510,6 @@ function RoomContent() {
         setStatus('connected')
       } else if (s === 'disconnected' || s === 'failed' || s === 'closed') {
         setStatus('waiting')
-        if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null
         sysMsg('Peer disconnected. Waiting for a new connection…')
         remoteIdRef.current = null
         setRemoteUser(null)
@@ -636,7 +554,12 @@ function RoomContent() {
     }
     dc.onerror = (e) => {
       const err = e?.error
-      console.error('DataChannel error', err?.message ?? err ?? e)
+      const msg = err?.message ?? ''
+      // "User-Initiated Abort, reason=Close called" fires on every intentional
+      // close (e.g. user leaves); it is not a real error — suppress it.
+      if (msg.includes('User-Initiated Abort') || msg.includes('Close called'))
+        return
+      console.error('DataChannel error', msg || err || e)
     }
     dc.onmessage = ({ data }) => handleDcMessage(data)
   }
@@ -647,22 +570,7 @@ function RoomContent() {
     let destroyed = false
 
     async function init() {
-      // 1. Get local audio
-      let stream
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      } catch {
-        stream = new MediaStream()
-        sysMsg('No microphone detected.')
-      }
-      if (destroyed) {
-        stream?.getTracks().forEach((t) => t.stop())
-        return
-      }
-
-      localStreamRef.current = stream
-
-      // 2. Connect to signaling server
+      // Connect to signaling server
       const socket = io({
         path: '/socket.io',
         transports: ['websocket', 'polling'],
@@ -765,7 +673,6 @@ function RoomContent() {
         setStatus('waiting')
         setRemoteUser(null)
         remoteIdRef.current = null
-        if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null
         sysMsg('Peer left the room. Waiting for a new connection…')
         // Clean up PC so next entrant gets a fresh one
         if (pcRef.current) {
@@ -823,7 +730,6 @@ function RoomContent() {
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('mousemove', resetIdle)
       window.removeEventListener('keydown', resetIdle)
-      localStreamRef.current?.getTracks().forEach((t) => t.stop())
       pcRef.current?.close()
       socketRef.current?.disconnect()
     }
@@ -892,17 +798,43 @@ function RoomContent() {
     try {
       const buf = await file.arrayBuffer()
       const enc = await encryptBinary(sharedKeyRef.current, buf)
+
+      // Split ciphertext into chunks safe for DataChannel (<256 KB per message)
+      const chunks = []
+      for (let i = 0; i < enc.ct.length; i += CHUNK_SIZE)
+        chunks.push(enc.ct.slice(i, i + CHUNK_SIZE))
+
+      const id = `${Date.now()}-${Math.random()}`
       const ts = Date.now()
-      dcRef.current.send(
+      const dc = dcRef.current
+      dc.bufferedAmountLowThreshold = 65536 // 64 KB
+
+      dc.send(
         JSON.stringify({
+          __transfer: 'header',
+          id,
           username,
           ts,
-          encAttachment: enc,
           mimeType: file.type || 'application/octet-stream',
           name: file.name,
           size: file.size,
+          totalChunks: chunks.length,
+          iv: enc.iv,
         })
       )
+
+      for (let i = 0; i < chunks.length; i++) {
+        if (dc.readyState !== 'open')
+          throw new Error('Channel closed during transfer')
+        // Backpressure: wait if send buffer is too full
+        if (dc.bufferedAmount > 1024 * 1024) await waitForDrain(dc)
+        dc.send(
+          JSON.stringify({ __transfer: 'chunk', id, index: i, data: chunks[i] })
+        )
+      }
+
+      dc.send(JSON.stringify({ __transfer: 'done', id }))
+
       const url = URL.createObjectURL(file)
       pushMsg({
         type: 'local',
@@ -954,17 +886,18 @@ function RoomContent() {
     if (e.target.value) notifyTyping()
   }
 
-  // ── Media controls ──────────────────────────────────────────────────────
-
-  function toggleMute() {
-    localStreamRef.current?.getAudioTracks().forEach((t) => {
-      t.enabled = isMuted
-    })
-    setIsMuted((v) => !v)
-  }
-
   function leave() {
     router.push('/')
+  }
+
+  function handleCopyRoom() {
+    navigator.clipboard
+      .writeText(roomId)
+      .then(() => {
+        setRoomCopied(true)
+        setTimeout(() => setRoomCopied(false), 2000)
+      })
+      .catch(() => {})
   }
 
   function fmtTime(ts) {
@@ -980,14 +913,6 @@ function RoomContent() {
     <div
       className='h-screen bg-slate-950 flex flex-col overflow-hidden select-none'
       onClick={() => setShowAttachMenu(false)}>
-      {/* Hidden audio for remote stream */}
-      <audio
-        ref={remoteAudioRef}
-        autoPlay
-        playsInline
-        className='hidden'
-      />
-
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -1001,7 +926,7 @@ function RoomContent() {
       <header className='flex items-center justify-between px-4 py-2.5 bg-slate-900 border-b border-slate-800 shrink-0 z-10'>
         <div className='flex items-center gap-2.5'>
           <div className='w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0'>
-            <ChatIcon />
+            <MessageSquare className='w-5 h-5 text-white' />
           </div>
           <span className='text-white font-bold text-sm hidden sm:block'>
             AnonChat
@@ -1015,6 +940,16 @@ function RoomContent() {
               {roomId}
             </span>
           </div>
+          <button
+            onClick={handleCopyRoom}
+            title={roomCopied ? 'Copied!' : 'Copy room ID'}
+            className='w-7 h-7 flex items-center justify-center bg-slate-800 hover:bg-slate-700 border border-slate-700/50 rounded-lg text-slate-400 hover:text-white transition'>
+            {roomCopied ? (
+              <Check className='w-4 h-4 text-emerald-400' />
+            ) : (
+              <Copy className='w-4 h-4' />
+            )}
+          </button>
           <div className='flex items-center gap-1.5 bg-slate-800 rounded-lg px-2.5 py-1.5 border border-slate-700/50'>
             <div className='w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-[10px] shrink-0'>
               {username[0]?.toUpperCase()}
@@ -1039,7 +974,7 @@ function RoomContent() {
               <p className='text-sm font-semibold text-white'>Chat</p>
               {isEncrypted && (
                 <span className='inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5'>
-                  <LockIcon /> E2E Encrypted
+                  <Lock className='w-3 h-3' /> E2E Encrypted
                 </span>
               )}
             </div>
@@ -1056,20 +991,10 @@ function RoomContent() {
           </div>
           <div className='flex items-center gap-2'>
             <button
-              onClick={toggleMute}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all text-white ${
-                isMuted
-                  ? 'bg-red-500 hover:bg-red-600 shadow-lg shadow-red-500/30'
-                  : 'bg-slate-700 hover:bg-slate-600'
-              }`}
-              title={isMuted ? 'Unmute mic' : 'Mute mic'}>
-              <MicIcon muted={isMuted} />
-            </button>
-            <button
               onClick={leave}
               className='w-10 h-10 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-all shadow-lg shadow-red-500/20 text-white'
               title='Leave room'>
-              <LeaveIcon />
+              <LogOut className='w-5 h-5' />
             </button>
           </div>
         </div>
@@ -1079,7 +1004,7 @@ function RoomContent() {
           {messages.length === 0 && (
             <div className='text-center text-slate-600 text-sm mt-12'>
               <div className='flex justify-center mb-2 opacity-30'>
-                <ChatIcon />
+                <MessageSquare className='w-5 h-5' />
               </div>
               <p>No messages yet</p>
               <p className='text-xs mt-1'>
@@ -1171,7 +1096,7 @@ function RoomContent() {
                 disabled={status !== 'connected' || !isEncrypted}
                 className='w-10 h-10 rounded-xl bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center text-slate-300 transition shrink-0'
                 title='Send attachment'>
-                <AttachIcon />
+                <Paperclip className='w-5 h-5' />
               </button>
 
               {showAttachMenu && (
@@ -1227,12 +1152,12 @@ function RoomContent() {
               }
               className='px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-all shrink-0'
               title='Send'>
-              <SendIcon />
+              <Send className='w-4 h-4' />
             </button>
           </div>
 
           <p className='text-[10px] text-slate-600 mt-1.5 text-center flex items-center justify-center gap-1'>
-            <LockIcon />
+            <Lock className='w-3 h-3' />
             {isEncrypted
               ? 'ECDH · AES-256-GCM · end-to-end encrypted'
               : 'Establishing secure channel…'}

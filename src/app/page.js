@@ -32,6 +32,29 @@ const NOUNS = [
   'Moose',
 ]
 
+const FRUITS = [
+  'Apple',
+  'Mango',
+  'Kiwi',
+  'Grape',
+  'Lemon',
+  'Peach',
+  'Berry',
+  'Melon',
+  'Cherry',
+  'Papaya',
+  'Guava',
+  'Lychee',
+  'Plum',
+  'Fig',
+  'Lime',
+  'Pear',
+  'Banana',
+  'Orange',
+  'Coconut',
+  'Apricot',
+]
+
 function generateUsername() {
   const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)]
   const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)]
@@ -40,7 +63,13 @@ function generateUsername() {
 }
 
 function generateRoomId() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase()
+  const a = FRUITS[Math.floor(Math.random() * FRUITS.length)]
+  let b
+  do {
+    b = FRUITS[Math.floor(Math.random() * FRUITS.length)]
+  } while (b === a)
+  const n = Math.floor(Math.random() * 99) + 1
+  return `${a}-${b}-${n}`
 }
 
 export default function Home() {
@@ -49,6 +78,7 @@ export default function Home() {
   // then set random values on the client via useEffect.
   const [username, setUsername] = useState('')
   const [roomId, setRoomId] = useState('')
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     setUsername(generateUsername())
@@ -57,12 +87,23 @@ export default function Home() {
 
   const handleJoin = (e) => {
     e.preventDefault()
-    const safeRoom = roomId.trim().toUpperCase()
+    const safeRoom = roomId.trim()
     const safeUser = username.trim()
     if (!safeUser || !safeRoom) return
     router.push(
       `/room/${encodeURIComponent(safeRoom)}?username=${encodeURIComponent(safeUser)}`
     )
+  }
+
+  const handleCopyRoom = () => {
+    if (!roomId.trim()) return
+    navigator.clipboard
+      .writeText(roomId.trim())
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+      .catch(() => {})
   }
 
   return (
@@ -131,14 +172,20 @@ export default function Home() {
                   type='text'
                   value={roomId}
                   onChange={(e) =>
-                    setRoomId(
-                      e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')
-                    )
+                    setRoomId(e.target.value.replace(/[^A-Za-z0-9-]/g, ''))
                   }
-                  maxLength={20}
+                  maxLength={30}
                   placeholder='Room code'
-                  className='flex-1 bg-slate-700/50 border border-slate-600/70 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition'
+                  className='flex-1 bg-slate-700/50 border border-slate-600/70 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 font-mono tracking-wide focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition'
                 />
+                <button
+                  type='button'
+                  onClick={handleCopyRoom}
+                  disabled={!roomId.trim()}
+                  className='px-3 py-3 bg-slate-700/80 hover:bg-slate-600/80 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-600/70 rounded-xl text-slate-300 hover:text-white transition text-lg'
+                  title={copied ? 'Copied!' : 'Copy room ID'}>
+                  {copied ? '✅' : '📋'}
+                </button>
                 <button
                   type='button'
                   onClick={() => setRoomId(generateRoomId())}
@@ -148,7 +195,9 @@ export default function Home() {
                 </button>
               </div>
               <p className='text-xs text-slate-500 mt-1.5'>
-                Share this ID with others to join the same room
+                {copied
+                  ? '✅ Room ID copied!'
+                  : 'Click 📋 to copy room ID, then share it with friends'}
               </p>
             </div>
 
