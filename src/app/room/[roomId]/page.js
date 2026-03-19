@@ -17,6 +17,14 @@ import {
   X,
   FileText,
   Play,
+  Phone,
+  PhoneOff,
+  PhoneCall,
+  PhoneMissed,
+  Video,
+  VideoOff,
+  Mic,
+  MicOff,
 } from 'lucide-react'
 
 const ICE_CONFIG = {
@@ -425,6 +433,15 @@ function RoomContent() {
   const fileInputRef = useRef(null)
   const incomingTransfersRef = useRef({}) // id → { meta, chunks[], received }
 
+  // Call refs
+  const callPcRef = useRef(null) // separate RTCPeerConnection for calls
+  const localCallStreamRef = useRef(null) // local media stream for active call
+  const remoteCallAudioRef = useRef(null) // <audio> for remote call audio
+  const remoteCallVideoRef = useRef(null) // <video> for remote call video
+  const localCallVideoRef = useRef(null) // <video> for local video preview
+  const callTypeRef = useRef(null) // 'audio' | 'video'
+  const pendingCallOfferRef = useRef(null) // stores incoming SDP offer until accepted
+
   // Encryption refs
   const keyPairRef = useRef(null) // own ECDH key pair
   const sharedKeyRef = useRef(null) // derived AES-GCM shared key
@@ -450,6 +467,14 @@ function RoomContent() {
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [attachType, setAttachType] = useState(null)
   const [roomCopied, setRoomCopied] = useState(false)
+
+  // Call state: 'idle' | 'outgoing' | 'incoming' | 'active'
+  const [callState, setCallState] = useState('idle')
+  const [callType, setCallType] = useState(null) // 'audio' | 'video'
+  const [callMuted, setCallMuted] = useState(false)
+  const [callVideoOff, setCallVideoOff] = useState(false)
+  // null | 'mic' | 'camera' — shown while browser permission dialog is open
+  const [permRequesting, setPermRequesting] = useState(null)
 
   // Auto-scroll chat
   useEffect(() => {
@@ -523,6 +548,38 @@ function RoomContent() {
     if (msg.__keyExchange) {
       remotePubKeyRef.current = msg.pubKey
       await tryDeriveKey()
+      return
+    }
+
+    // Call signaling — relayed through the existing DataChannel
+    if (msg.__call) {
+      const { type } = msg
+      if (type === 'offer') {
+        callTypeRef.current = msg.callType
+        setCallType(msg.callType)
+        pendingCallOfferRef.current = msg.offer
+        setCallState('incoming')
+      } else if (type === 'answer') {
+        try {
+          await callPcRef.current?.setRemoteDescription(
+            new RTCSessionDescription(msg.answer)
+          )
+        } catch (e) {
+          console.error('Call answer error', e)
+        }
+      } else if (type === 'ice') {
+        try {
+          await callPcRef.current?.addIceCandidate(
+            new RTCIceCandidate(msg.candidate)
+          )
+        } catch {}
+      } else if (type === 'reject') {
+        sysMsg('Call was declined.')
+        cleanupCall()
+      } else if (type === 'hangup') {
+        sysMsg(`${remoteUser} ended the call.`)
+        cleanupCall()
+      }
       return
     }
 
@@ -652,6 +709,7 @@ function RoomContent() {
         setIsEncrypted(false)
         setPeerTyping(false)
         setPeerIdle(false)
+        cleanupCall()
       }
     }
 
@@ -805,23 +863,13 @@ function RoomContent() {
       // ── Remote peer left ──────────────────────────────────────────────────
       socket.on('user-left', ({ socketId }) => {
         if (socketId !== remoteIdRef.current) return
-        setStatus('waiting')
-        setRemoteUser(null)
-        remoteIdRef.current = null
-        sysMsg('Peer left the room. Waiting for a new connection…')
-        // Clean up PC so next entrant gets a fresh one
+        cleanupCall()
         if (pcRef.current) {
           pcRef.current.close()
           pcRef.current = null
         }
-        dcRef.current = null
-        pendingIceRef.current = []
-        sharedKeyRef.current = null
-        keyPairRef.current = null
-        remotePubKeyRef.current = null
-        setIsEncrypted(false)
-        setPeerTyping(false)
-        setPeerIdle(false)
+        socketRef.current?.disconnect()
+        router.push('/')
       })
 
       socket.on('connect_error', () => setStatus('error'))
@@ -865,6 +913,9 @@ function RoomContent() {
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('mousemove', resetIdle)
       window.removeEventListener('keydown', resetIdle)
+      // Clean up call if active
+      localCallStreamRef.current?.getTracks().forEach((t) => t.stop())
+      callPcRef.current?.close()
       pcRef.current?.close()
       socketRef.current?.disconnect()
     }
@@ -1035,6 +1086,262 @@ function RoomContent() {
       .catch(() => {})
   }
 
+  // ── Call helpers ──────────────────────────────────────────────────────────
+
+  function sendCallSignal(obj) {
+    const dc = dcRef.current
+    if (dc?.readyState === 'open') {
+      try {
+        dc.send(JSON.stringify({ __call: true, ...obj }))
+      } catch {}
+    }
+  }
+
+  function cleanupCall() {
+    // Stop all local tracks
+    localCallStreamRef.current?.getTracks().forEach((t) => t.stop())
+    localCallStreamRef.current = null
+
+    // Close call peer connection
+    if (callPcRef.current) {
+      callPcRef.current.close()
+      callPcRef.current = null
+    }
+
+    // Clear video/audio element sources
+    if (remoteCallAudioRef.current) {
+      remoteCallAudioRef.current.srcObject = null
+    }
+    if (remoteCallVideoRef.current) {
+      remoteCallVideoRef.current.srcObject = null
+    }
+    if (localCallVideoRef.current) {
+      localCallVideoRef.current.srcObject = null
+    }
+
+    pendingCallOfferRef.current = null
+    callTypeRef.current = null
+    setCallState('idle')
+    setCallType(null)
+    setCallMuted(false)
+    setCallVideoOff(false)
+    setPermRequesting(null)
+  }
+
+  function buildCallPC(type) {
+    const pc = new RTCPeerConnection(ICE_CONFIG)
+    callPcRef.current = pc
+
+    // Forward ICE candidates through the DataChannel
+    pc.onicecandidate = ({ candidate }) => {
+      if (candidate) sendCallSignal({ type: 'ice', candidate })
+    }
+
+    pc.onconnectionstatechange = () => {
+      const s = pc.connectionState
+      if (s === 'connected') {
+        setCallState('active')
+      } else if (s === 'disconnected' || s === 'failed' || s === 'closed') {
+        if (callPcRef.current === pc) {
+          sysMsg('Call connection lost.')
+          cleanupCall()
+        }
+      }
+    }
+
+    // Receive remote tracks
+    pc.ontrack = ({ streams, track }) => {
+      const stream = streams[0]
+      if (track.kind === 'audio' && remoteCallAudioRef.current) {
+        remoteCallAudioRef.current.srcObject = stream
+      }
+      if (track.kind === 'video' && remoteCallVideoRef.current) {
+        remoteCallVideoRef.current.srcObject = stream
+      }
+    }
+
+    return pc
+  }
+
+  function getMediaErrorMessage(e, type) {
+    const name = e?.name
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return type === 'video'
+        ? 'Camera or microphone not found. Please connect a device and try again.'
+        : 'Microphone not found. Please connect a device and try again.'
+    }
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+      return type === 'video'
+        ? 'Camera or microphone is already in use by another app.'
+        : 'Microphone is already in use by another app.'
+    }
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      return type === 'video'
+        ? 'Camera/microphone access denied. Please allow access in browser settings.'
+        : 'Microphone access denied. Please allow access in browser settings.'
+    }
+    if (name === 'OverconstrainedError') {
+      return 'The requested media settings are not supported by your device.'
+    }
+    return type === 'video'
+      ? 'Could not access camera or microphone.'
+      : 'Could not access microphone.'
+  }
+
+  // Check if a permission is already granted without triggering a prompt
+  async function queryPermission(name) {
+    try {
+      const result = await navigator.permissions.query({ name })
+      return result.state // 'granted' | 'prompt' | 'denied'
+    } catch {
+      return 'prompt' // API not supported — assume we need to ask
+    }
+  }
+
+  async function getCallStream(type) {
+    // Determine which permissions to check
+    const micState = await queryPermission('microphone')
+    const camState =
+      type === 'video' ? await queryPermission('camera') : 'granted'
+
+    if (micState === 'denied') {
+      throw Object.assign(new Error('Permission denied'), {
+        name: 'NotAllowedError',
+      })
+    }
+    if (type === 'video' && camState === 'denied') {
+      // Camera denied but mic may be ok — fall back to audio
+      sysMsg('Camera permission denied — starting audio-only call.')
+      setPermRequesting('mic')
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: false,
+        })
+        return stream
+      } finally {
+        setPermRequesting(null)
+      }
+    }
+
+    // Show which permission we will request while the browser dialog is open
+    setPermRequesting(type === 'video' ? 'camera' : 'mic')
+    try {
+      if (type === 'video') {
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: true,
+          })
+        } catch (e) {
+          if (
+            e?.name === 'NotFoundError' ||
+            e?.name === 'DevicesNotFoundError'
+          ) {
+            sysMsg('Camera not found — starting audio-only call.')
+            return await navigator.mediaDevices.getUserMedia({
+              audio: true,
+              video: false,
+            })
+          }
+          throw e
+        }
+      }
+      return await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: false,
+      })
+    } finally {
+      setPermRequesting(null)
+    }
+  }
+
+  async function startCall(type) {
+    if (callState !== 'idle' || status !== 'connected') return
+    try {
+      const stream = await getCallStream(type)
+      localCallStreamRef.current = stream
+
+      // Determine actual call type based on tracks obtained
+      const actualType = stream.getVideoTracks().length > 0 ? 'video' : 'audio'
+
+      const pc = buildCallPC(actualType)
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream))
+
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+
+      callTypeRef.current = actualType
+      setCallType(actualType)
+      setCallState('outgoing')
+      sysMsg(`${actualType === 'video' ? 'Video' : 'Audio'} call started…`)
+
+      sendCallSignal({ type: 'offer', callType: actualType, offer })
+    } catch (e) {
+      sysMsg(getMediaErrorMessage(e, type))
+      console.error('startCall error', e)
+      cleanupCall()
+    }
+  }
+
+  async function acceptCall() {
+    if (callState !== 'incoming') return
+    const savedOffer = pendingCallOfferRef.current
+    const type = callTypeRef.current
+    if (!savedOffer) return
+    try {
+      const stream = await getCallStream(type)
+      localCallStreamRef.current = stream
+
+      // Actual type may differ if camera fallback occurred
+      const actualType = stream.getVideoTracks().length > 0 ? 'video' : 'audio'
+      callTypeRef.current = actualType
+      setCallType(actualType)
+
+      const pc = buildCallPC(actualType)
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream))
+
+      await pc.setRemoteDescription(new RTCSessionDescription(savedOffer))
+      const answer = await pc.createAnswer()
+      await pc.setLocalDescription(answer)
+
+      sendCallSignal({ type: 'answer', answer })
+    } catch (e) {
+      sysMsg(getMediaErrorMessage(e, type))
+      console.error('acceptCall error', e)
+      rejectCall()
+    }
+  }
+
+  function rejectCall() {
+    sendCallSignal({ type: 'reject' })
+    cleanupCall()
+  }
+
+  function hangUp() {
+    sendCallSignal({ type: 'hangup' })
+    sysMsg('Call ended.')
+    cleanupCall()
+  }
+
+  function toggleCallMute() {
+    const stream = localCallStreamRef.current
+    if (!stream) return
+    stream.getAudioTracks().forEach((t) => {
+      t.enabled = !t.enabled
+    })
+    setCallMuted((m) => !m)
+  }
+
+  function toggleCallVideo() {
+    const stream = localCallStreamRef.current
+    if (!stream) return
+    stream.getVideoTracks().forEach((t) => {
+      t.enabled = !t.enabled
+    })
+    setCallVideoOff((v) => !v)
+  }
+
   function fmtTime(ts) {
     return new Date(ts).toLocaleTimeString([], {
       hour: '2-digit',
@@ -1056,6 +1363,183 @@ function RoomContent() {
         className='hidden'
         onChange={onFileSelected}
       />
+      {/* Hidden media elements for call streams — always in DOM so refs stay valid */}
+      <audio
+        ref={remoteCallAudioRef}
+        autoPlay
+        playsInline
+        className='hidden'
+      />
+      <video
+        ref={remoteCallVideoRef}
+        autoPlay
+        playsInline
+        className='hidden'
+      />
+
+      {/* ── Permission request overlay ─────────────────────────────────────── */}
+      {permRequesting && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm'>
+          <div className='bg-slate-900 border border-slate-700 rounded-3xl p-8 flex flex-col items-center gap-5 shadow-2xl max-w-sm mx-4 text-center'>
+            <div className='w-16 h-16 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center'>
+              {permRequesting === 'camera' ? (
+                <Video className='w-7 h-7 text-amber-400' />
+              ) : (
+                <Mic className='w-7 h-7 text-amber-400' />
+              )}
+            </div>
+            <div>
+              <p className='text-white font-semibold text-base mb-1'>
+                {permRequesting === 'camera'
+                  ? 'Allow Camera & Microphone'
+                  : 'Allow Microphone'}
+              </p>
+              <p className='text-slate-400 text-sm leading-relaxed'>
+                {permRequesting === 'camera'
+                  ? 'Please allow access to your camera and microphone in the browser popup to start the video call.'
+                  : 'Please allow access to your microphone in the browser popup to start the audio call.'}
+              </p>
+            </div>
+            <div className='flex items-center gap-2 text-xs text-slate-500'>
+              <div className='w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin' />
+              Waiting for permission…
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Incoming call overlay ──────────────────────────────────────────── */}
+      {callState === 'incoming' && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm'>
+          <div className='bg-slate-900 border border-slate-700 rounded-3xl p-8 flex flex-col items-center gap-5 shadow-2xl min-w-72'>
+            <div className='w-16 h-16 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center animate-pulse'>
+              {callType === 'video' ? (
+                <Video className='w-7 h-7 text-indigo-400' />
+              ) : (
+                <Phone className='w-7 h-7 text-indigo-400' />
+              )}
+            </div>
+            <div className='text-center'>
+              <p className='text-white font-semibold text-lg'>{remoteUser}</p>
+              <p className='text-slate-400 text-sm mt-1'>
+                Incoming {callType === 'video' ? 'video' : 'audio'} call…
+              </p>
+            </div>
+            <div className='flex gap-4'>
+              <button
+                onClick={rejectCall}
+                className='w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center text-white transition shadow-lg shadow-red-500/20'
+                title='Decline'>
+                <PhoneOff className='w-6 h-6' />
+              </button>
+              <button
+                onClick={acceptCall}
+                className='w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-700 flex items-center justify-center text-white transition shadow-lg shadow-emerald-500/20'
+                title='Accept'>
+                <Phone className='w-6 h-6' />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Active / outgoing call overlay ─────────────────────────────────── */}
+      {(callState === 'active' || callState === 'outgoing') && (
+        <div className='fixed inset-0 z-50 flex flex-col items-center justify-between bg-slate-950/95 backdrop-blur-sm py-12'>
+          {/* Remote video (full-screen behind everything) — only for video calls */}
+          {callType === 'video' && callState === 'active' && (
+            <video
+              autoPlay
+              playsInline
+              className='absolute inset-0 w-full h-full object-cover opacity-80'
+              ref={(el) => {
+                if (el && remoteCallVideoRef.current?.srcObject) {
+                  el.srcObject = remoteCallVideoRef.current.srcObject
+                }
+              }}
+            />
+          )}
+
+          {/* Top info */}
+          <div className='relative z-10 flex flex-col items-center gap-3'>
+            <div className='w-20 h-20 rounded-full bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center'>
+              {callType === 'video' ? (
+                <Video className='w-9 h-9 text-indigo-400' />
+              ) : (
+                <Phone className='w-9 h-9 text-indigo-400' />
+              )}
+            </div>
+            <p className='text-white font-semibold text-xl'>{remoteUser}</p>
+            <p className='text-slate-400 text-sm'>
+              {callState === 'outgoing'
+                ? 'Calling…'
+                : callType === 'video'
+                  ? 'Video call'
+                  : 'Audio call'}
+            </p>
+          </div>
+
+          {/* Local video pip (video calls only) */}
+          {callType === 'video' && (
+            <video
+              autoPlay
+              playsInline
+              muted
+              className='absolute bottom-32 right-4 w-28 h-40 rounded-2xl object-cover border-2 border-slate-700 z-20 bg-slate-800'
+              ref={(el) => {
+                if (el && localCallStreamRef.current) {
+                  el.srcObject = localCallStreamRef.current
+                }
+              }}
+            />
+          )}
+
+          {/* Controls */}
+          <div className='relative z-10 flex gap-4'>
+            {/* Mute toggle */}
+            <button
+              onClick={toggleCallMute}
+              className={`w-14 h-14 rounded-full flex items-center justify-center text-white transition shadow-lg ${
+                callMuted
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-slate-700 hover:bg-slate-600'
+              }`}
+              title={callMuted ? 'Unmute' : 'Mute'}>
+              {callMuted ? (
+                <MicOff className='w-6 h-6' />
+              ) : (
+                <Mic className='w-6 h-6' />
+              )}
+            </button>
+
+            {/* Video toggle (video call only) */}
+            {callType === 'video' && (
+              <button
+                onClick={toggleCallVideo}
+                className={`w-14 h-14 rounded-full flex items-center justify-center text-white transition shadow-lg ${
+                  callVideoOff
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-slate-700 hover:bg-slate-600'
+                }`}
+                title={callVideoOff ? 'Turn camera on' : 'Turn camera off'}>
+                {callVideoOff ? (
+                  <VideoOff className='w-6 h-6' />
+                ) : (
+                  <Video className='w-6 h-6' />
+                )}
+              </button>
+            )}
+
+            {/* Hang up */}
+            <button
+              onClick={hangUp}
+              className='w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center text-white transition shadow-lg shadow-red-500/20'
+              title='End call'>
+              <PhoneOff className='w-6 h-6' />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className='flex items-center justify-between px-4 py-2.5 bg-slate-900 border-b border-slate-800 shrink-0 z-10'>
@@ -1125,6 +1609,24 @@ function RoomContent() {
             </p>
           </div>
           <div className='flex items-center gap-2'>
+            {/* Audio call button */}
+            {status === 'connected' && callState === 'idle' && (
+              <button
+                onClick={() => startCall('audio')}
+                className='w-9 h-9 rounded-full bg-slate-700 hover:bg-emerald-700 flex items-center justify-center text-slate-300 hover:text-white transition'
+                title='Start audio call'>
+                <Phone className='w-4 h-4' />
+              </button>
+            )}
+            {/* Video call button */}
+            {status === 'connected' && callState === 'idle' && (
+              <button
+                onClick={() => startCall('video')}
+                className='w-9 h-9 rounded-full bg-slate-700 hover:bg-emerald-700 flex items-center justify-center text-slate-300 hover:text-white transition'
+                title='Start video call'>
+                <Video className='w-4 h-4' />
+              </button>
+            )}
             <button
               onClick={leave}
               className='w-10 h-10 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-all shadow-lg shadow-red-500/20 text-white'

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { MessageSquare, Dices, Copy, Check, Shuffle, Lock } from 'lucide-react'
 
 const ADJECTIVES = [
   'Anonymous',
@@ -112,18 +113,7 @@ export default function Home() {
         {/* Logo */}
         <div className='text-center mb-8'>
           <div className='inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 mb-4 shadow-lg shadow-indigo-500/30'>
-            <svg
-              className='w-8 h-8 text-white'
-              fill='none'
-              stroke='currentColor'
-              viewBox='0 0 24 24'>
-              <path
-                strokeLinecap='round'
-                strokeLinejoin='round'
-                strokeWidth={2}
-                d='M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z'
-              />
-            </svg>
+            <MessageSquare className='w-8 h-8 text-white' />
           </div>
           <h1 className='text-3xl font-bold text-white tracking-tight mb-1'>
             AnonChat
@@ -155,9 +145,9 @@ export default function Home() {
                 <button
                   type='button'
                   onClick={() => setUsername(generateUsername())}
-                  className='px-3 py-3 bg-slate-700/80 hover:bg-slate-600/80 border border-slate-600/70 rounded-xl text-slate-300 hover:text-white transition text-lg'
+                  className='px-3 py-3 bg-slate-700/80 hover:bg-slate-600/80 border border-slate-600/70 rounded-xl text-slate-300 hover:text-white transition'
                   title='Random username'>
-                  🎲
+                  <Dices className='w-5 h-5' />
                 </button>
               </div>
             </div>
@@ -182,22 +172,22 @@ export default function Home() {
                   type='button'
                   onClick={handleCopyRoom}
                   disabled={!roomId.trim()}
-                  className='px-3 py-3 bg-slate-700/80 hover:bg-slate-600/80 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-600/70 rounded-xl text-slate-300 hover:text-white transition text-lg'
+                  className='px-3 py-3 bg-slate-700/80 hover:bg-slate-600/80 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-600/70 rounded-xl text-slate-300 hover:text-white transition'
                   title={copied ? 'Copied!' : 'Copy room ID'}>
-                  {copied ? '✅' : '📋'}
+                  {copied ? <Check className='w-5 h-5 text-emerald-400' /> : <Copy className='w-5 h-5' />}
                 </button>
                 <button
                   type='button'
                   onClick={() => setRoomId(generateRoomId())}
-                  className='px-3 py-3 bg-slate-700/80 hover:bg-slate-600/80 border border-slate-600/70 rounded-xl text-slate-300 hover:text-white transition text-lg'
+                  className='px-3 py-3 bg-slate-700/80 hover:bg-slate-600/80 border border-slate-600/70 rounded-xl text-slate-300 hover:text-white transition'
                   title='Random room ID'>
-                  🔀
+                  <Shuffle className='w-5 h-5' />
                 </button>
               </div>
               <p className='text-xs text-slate-500 mt-1.5'>
                 {copied
                   ? '✅ Room ID copied!'
-                  : 'Click 📋 to copy room ID, then share it with friends'}
+                  : 'Click copy to share the room ID with friends'}
               </p>
             </div>
 
@@ -211,8 +201,9 @@ export default function Home() {
           </form>
 
           <div className='mt-6 pt-5 border-t border-slate-700/40'>
-            <p className='text-xs text-slate-500 text-center leading-relaxed'>
-              🔒 End-to-end encrypted via WebRTC &nbsp;·&nbsp; No accounts
+            <p className='text-xs text-slate-500 text-center leading-relaxed flex items-center justify-center gap-1.5'>
+              <Lock className='w-3 h-3 shrink-0' />
+              End-to-end encrypted via WebRTC &nbsp;·&nbsp; No accounts
               &nbsp;·&nbsp; No data stored
             </p>
           </div>
