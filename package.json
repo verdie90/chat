@@ -2,10 +2,11 @@
   "name": "chat",
   "version": "0.1.0",
   "private": true,
+  "main": "app.js",
   "scripts": {
     "dev": "node server.mjs",
     "build": "next build",
-    "start": "NODE_ENV=production node server.mjs"
+    "start": "NODE_ENV=production node app.js"
   },
   "dependencies": {
     "lucide-react": "^0.577.0",
